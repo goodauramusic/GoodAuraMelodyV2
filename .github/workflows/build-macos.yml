@@ -1,0 +1,76 @@
+name: Build Universal macOS VST3
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure universal macOS build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+
+      - name: Build VST3
+        run: |
+          cmake --build build \
+            --config Release \
+            --parallel 2
+
+      - name: Locate VST3
+        run: |
+          echo "Searching for built VST3 bundles..."
+          find build -type d -name "*.vst3" -print
+
+      - name: Package VST3
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p artifact
+
+          VST3_PATH="$(find build -type d -name "*.vst3" | head -n 1)"
+
+          if [ -z "$VST3_PATH" ]; then
+            echo "ERROR: No .vst3 bundle was found."
+            find build -maxdepth 8 -print
+            exit 1
+          fi
+
+          echo "Found VST3:"
+          echo "$VST3_PATH"
+
+          cp -R "$VST3_PATH" artifact/
+
+          ditto \
+            -c \
+            -k \
+            --sequesterRsrc \
+            --keepParent \
+            "$VST3_PATH" \
+            "artifact/GoodAuraMelody-V2-macOS-Universal.zip"
+
+      - name: Check architecture
+        shell: bash
+        run: |
+          VST3_PATH="$(find build -type d -name "*.vst3" | head -n 1)"
+          BINARY="$(find "$VST3_PATH/Contents/MacOS" -type f | head -n 1)"
+
+          echo "Plugin binary:"
+          echo "$BINARY"
+
+          file "$BINARY"
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoodAuraMelody-V2-macOS-Universal
+          path: artifact/
